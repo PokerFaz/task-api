@@ -26,3 +26,4 @@ uvicorn==0.52.4
 bandit
 setuptools==84.0.0
 msgpack==1.2.2
+ruff
