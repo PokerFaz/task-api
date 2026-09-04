@@ -9,9 +9,14 @@ on:
     branches:
       - main
 
+env:
+  TEST_TAG: pokerfaz/task-api:test
+  IMAGE_TAG: pokerfaz/task-api:${{ github.sha }}
+  LATEST_TAG: pokerfaz/task-api:latest
+
 jobs:
   test-and-build:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Checkout repository
@@ -36,23 +41,27 @@ jobs:
       - name: Run Ruff
         run: ruff check .
 
-      - name: Build Docker image
-        run: docker build -t task-api .
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
-      - name: Scan Docker image
+      - name: Build Docker Image
+        run: |
+          docker build -t ${{ env.IMAGE_TAG }} .
+          docker tag ${{ env.IMAGE_TAG }} ${{ env.LATEST_TAG }}
+
+      - name: Scan Docker image with Trivy
         uses: aquasecurity/trivy-action@master
         with:
-            image-ref: task-api
-            format: table
-            exit-code: 1
-            ignore-unfixed: true
-            severity: CRITICAL,HIGH
+          image-ref: ${{ env.IMAGE_TAG }}
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
 
-      - name: Deploy to Kubernetes
+      - name: Deploy to Kubernetes (Main branch only)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: |
-          kubectl apply -f k8s/deployment.yaml
-          kubectl apply -f k8s/service.yaml
-
-      - name: Wait for rolling deployment
-        run: |
-          kubectl rollout status deployment/task-api-deployment
+          kubectl config use-context docker-desktop
+          kubectl apply -f deployment.yaml
+          kubectl set image deployment/task-api-deployment task-api=${{ env.IMAGE_TAG }}
+          kubectl rollout status deployment/task-api-deployment --timeout=90s
